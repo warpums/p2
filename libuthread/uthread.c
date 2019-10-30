@@ -46,9 +46,11 @@ void uthread_yield(void)
         running_tcb = current_tcb;
         running_tcb->state = running;
 
-        printf("new main tid = %d\n", (int)running_tcb->tid);
+        printf("new running tid = %d\n", (int)running_tcb->tid);
 
         uthread_ctx_switch(&temp->tcb_context, &running_tcb->tcb_context);
+
+        printf("ready queue length = %d\n", queue_length(ready_q));
 
         //enable preempt
 }
@@ -101,9 +103,9 @@ int uthread_create(uthread_func_t func, void *arg)
 
         queue_enqueue(ready_q, new_tcb);
 
-        printf("ready tid = %d\n", (int)new_tcb->tid);
+        printf("new ready tid = %d\n", (int)new_tcb->tid);
 
-        printf("main tid = %d\n", (int)running_tcb->tid);
+        printf("running tid = %d\n", (int)running_tcb->tid);
 
         return new_tcb->tid;
 }
@@ -123,11 +125,25 @@ void uthread_exit(int retval)
         current_tcb->state = zombie;
         queue_enqueue(zombie_q, current_tcb);*/
 
-        queue_enqueue(zombie_q, running_tcb);
+        printf("ENTERED EXIT\n");
+
+        struct tcb *new_run = calloc(1, sizeof(struct tcb));
+        struct tcb *old_run = calloc(1, sizeof(struct tcb));
+
+        queue_dequeue(ready_q, (void**)&new_run);
+
+        old_run = running_tcb;
+        old_run->state = zombie;
+        queue_enqueue(zombie_q, old_run);
+
+        running_tcb = new_run;
+        new_run->state = running;
+
+        uthread_ctx_switch(&old_run->tcb_context, &new_run->tcb_context);
 
 }
 
-/*int find_tid(void *data, void *arg)
+/*int find_tid(void *data, uthread_t arg)
 {
         struct tcb *current_tcb = calloc(1, sizeof(struct tcb));
 
@@ -148,7 +164,7 @@ int uthread_join(uthread_t tid, int *retval)
         struct tcb *found_tcb = calloc(1, sizeof(tcb));
         found_tcb = NULL;
 
-        queue_iterate(zombie_q, find_tid, tid, found_tcb);
+        queue_iterate(zombie_q, find_tid, tid, &found_tcb);
 
         if(found_tcb != NULL){
                 //collect
@@ -158,8 +174,10 @@ int uthread_join(uthread_t tid, int *retval)
 
         while(1){
                 if(queue_length(ready_q) == 0){
+                        printf("exiting join\n");
                         return 0;
                 }
+                printf("join yielding\n");
                 uthread_yield();
         }
         return 0;
